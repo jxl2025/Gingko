@@ -11,3 +11,4 @@ Three times, once per channel R, G, and B (since colors/light/materials are RGB 
 # (b) How many distinct scalar material parameters are needed?
 Five in total. They are ka, kd, ks, kr (weights) and the shininess exponent s. I note that the material base colors (ambient/diffuse/specular colors) are RGB, not scalar, and that theattenuation numbers c1, c2, c3 are for the global light/scene, not material.
 
+this
