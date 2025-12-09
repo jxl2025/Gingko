@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="resources/shaders/default.frag">/Users/kronos.di.vlad/Downloads/br-cs2230/proj5-jxl2025/resources/shaders/default.frag</file>
+    <file alias="resources/shaders/default.vert">/Users/kronos.di.vlad/Downloads/br-cs2230/proj5-jxl2025/resources/shaders/default.vert</file>
+  </qresource>
+</RCC>
+

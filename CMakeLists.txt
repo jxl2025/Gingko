@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Sets project name
-project(lab05 LANGUAGES CXX C)
+project(projects_realtime LANGUAGES CXX C)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -14,35 +15,67 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Specifies required Qt components
 find_package(Qt6 REQUIRED COMPONENTS Core)
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Gui)
+find_package(Qt6 REQUIRED COMPONENTS OpenGL)
+find_package(Qt6 REQUIRED COMPONENTS OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Xml)
 
 # Allows you to include files from within those directories, without prefixing their filepaths
 include_directories(src)
-include_directories(glm)
 
 # Specifies .cpp and .h files to be passed to the compiler
 add_executable(${PROJECT_NAME}
     src/main.cpp
 
-    src/canvas2d.cpp
-    src/lightmodel.cpp
+    src/realtime.cpp
     src/mainwindow.cpp
-    src/reflectionsampler.cpp
+    src/settings.cpp
+    src/utils/scenefilereader.cpp
+    src/utils/sceneparser.cpp
 
-    src/canvas2d.h
-    src/lightmodel.h
     src/mainwindow.h
-    src/param.h
-    src/rgba.h
-    src/reflectionsampler.h
-
-    src/mainwindow.ui
+    src/realtime.h
+    src/settings.h
+    src/utils/scenedata.h
+    src/utils/scenefilereader.h
+    src/utils/sceneparser.h
+    src/utils/shaderloader.h
+    src/utils/aspectratiowidget/aspectratiowidget.hpp
 )
+
+# GLM: this creates its library and allows you to `#include "glm/..."`
+add_subdirectory(glm)
+
+# GLEW: this creates its library and allows you to `#include "GL/glew.h"`
+add_library(StaticGLEW STATIC glew/src/glew.c
+    src/camera/camera.h
+    src/camera/camera.cpp
+    src/shapes/shapemeshes.h
+    src/shapes/ShapeMeshes.cpp
+    src/shapes/ShapeMeshes.h
+    src/shapes/Cone.cpp
+    src/shapes/Cone.h
+    src/shapes/Cube.cpp
+    src/shapes/Cone.h
+    src/shapes/Cylinder.cpp
+    src/shapes/Cylinder.h
+    src/shapes/Sphere.cpp
+    src/shapes/Sphere.h
+    src/final/KDTree3D.h
+    src/final/KDTree3D.cpp
+    src/final/venation.h
+    src/final/venation.cpp
+)
+include_directories(${PROJECT_NAME} PRIVATE glew/include)
 
 # Specifies libraries to be linked (Qt components, glew, etc)
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    Qt6::Widgets
-    Qt6::Core
+    Qt::Core
+    Qt::Gui
+    Qt::OpenGL
+    Qt::OpenGLWidgets
+    Qt::Xml
+    StaticGLEW
 )
 
 # Specifies other files
@@ -50,9 +83,18 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
     PREFIX
         "/"
     FILES
-        resources/intersections.dat
-        resources/background.png
+        resources/shaders/default.frag
+        resources/shaders/default.vert
 )
+
+# GLEW: this provides support for Windows (including 64-bit)
+if (WIN32)
+  add_compile_definitions(GLEW_STATIC)
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    opengl32
+    glu32
+  )
+endif()
 
 # Set this flag to silence warnings on Windows
 if (MSVC OR MSYS OR MINGW)

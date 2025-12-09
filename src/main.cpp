@@ -1,24 +1,28 @@
 #include "mainwindow.h"
 
 #include <QApplication>
+#include <QScreen>
+#include <iostream>
+#include <QSettings>
 
-
-
-/*
- * Entry point for the whole project.
- * The ONLY file you need to modify in this lab is lightmodel.cpp
- *   GUIDANCE:
- *       You may want to read rgba.h, param.h and lightmodel.h first
- *       as they contain some details about parameters, data structures
- *       you will use.
- */
-
-
-
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     QApplication a(argc, argv);
+
+    QCoreApplication::setApplicationName("Project 5: Realtime");
+    QCoreApplication::setOrganizationName("CS 1230");
+    QCoreApplication::setApplicationVersion(QT_VERSION_STR);
+
+    QSurfaceFormat fmt;
+    fmt.setVersion(4, 1);
+    fmt.setProfile(QSurfaceFormat::CoreProfile);
+    QSurfaceFormat::setDefaultFormat(fmt);
+
     MainWindow w;
+    w.initialize();
+    w.resize(800, 600);
     w.show();
-    return a.exec();
+
+    int return_val = a.exec();
+    w.finish();
+    return return_val;
 }
