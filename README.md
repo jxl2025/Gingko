@@ -10,3 +10,8 @@ Initially, I wanted to just replace the cylinders I currently have for each indi
 In practice, because the tree have so many small segments, the visual effect of the above approach is not very obvious.
 
 Therefore, I decided to take maximal degree-2 paths in the tree, so that we could group together short segments that belong to one 'section' of the tree. In addition to correctly retrieving these, the additional technical challenge is to ensure that the frames at select points over the resulting polyline paths are computed correctly, so that when we make a bezier surface 'tube' over these paths, we don't get incorrect cases where there is bad twisting in the control point topology. For frames at intermediate nodes, I take an average of the two edges that goes in and out of it, which helped maintain the thickness of the tube around many sharp corners. Then, I tesselate the bezier surface these control points create, so that we can get a much smoother branch (compared to the gaps between connecting cylinders in the previous approach). I think another advantage of this is that now we have fewer individual mesh elements overall, making it easier to do texturing and potentially more computationally efficient depending on the settings used. 
+
+additional features:
+- the auxin ('sources' in the code) is now in a sphere so the tree can look more realistic (growing straight up a bit before branching out as you said)
+- there's now a floor
+- since we're mainly going with the cylinders, I used an additional algorithm to make it so that the radius shrinks the 'newer' a branch is.
