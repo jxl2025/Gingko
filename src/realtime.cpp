@@ -32,6 +32,13 @@ Realtime::Realtime(QWidget *parent)
     // add these to avoid spamming rebulids
     m_lastExtraCredit3  = settings.extraCredit3;
     m_lastSceneFilePath = settings.sceneFilePath;
+
+    m_currentEdgeIndex = 0;
+
+    // Set up a timer to incrementally grow the tree
+    QTimer *growTreeTimer = new QTimer(this);
+    connect(growTreeTimer, &QTimer::timeout, this, &Realtime::growTreeStep);
+    growTreeTimer->start(30); // ~33 FPS
 }
 
 // added
@@ -160,7 +167,7 @@ void Realtime::rebuildSceneMeshes() {
         int p2 = std::max(3, static_cast<int>(std::round(baseP2 * totalFactor)));
 
         const ScenePrimitive &prim = shapeData.primitive;
-        ShapeMesh mesh = createShapeMesh(prim, p1, p2);
+        ShapeMesh mesh = createShapeMesh(prim, p1, p2, bezier);
         if (mesh.vertexCount > 0) {
             m_shapeMeshes.push_back(mesh);
         }
@@ -275,6 +282,22 @@ void Realtime::initializeGL() {
         ":/resources/shaders/default.vert",
         ":/resources/shaders/default.frag"
         );
+
+    //bump mapping
+    QImage img(":/resources/bump.png");
+    if (img.isNull()) { qWarning() << "bump missing"; }
+    img = img.convertToFormat(QImage::Format_RGBA8888);
+
+    m_bumpWidth = img.width();
+    m_bumpHeight = img.height();
+
+    glGenTextures(1, &m_bumpTexture);
+    glBindTexture(GL_TEXTURE_2D, m_bumpTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_bumpWidth, m_bumpHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.constBits());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Realtime::paintGL() {
@@ -286,6 +309,19 @@ void Realtime::paintGL() {
     }
 
     glUseProgram(m_phongProgram);
+
+    // bind
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_bumpTexture);
+    GLint loc = glGetUniformLocation(m_phongProgram, "u_bumpMap");
+    if (loc >= 0) glUniform1i(loc, 1);
+
+    loc = glGetUniformLocation(m_phongProgram, "u_bumpTexSize");
+    if (loc >= 0) glUniform2f(loc, (float)m_bumpWidth, (float)m_bumpHeight);
+
+    loc = glGetUniformLocation(m_phongProgram, "u_bumpScale");
+    if (loc >= 0) glUniform1f(loc, 0.15f);
+    // end bump
 
     int w = width()  * m_devicePixelRatio;
     int h = height() * m_devicePixelRatio;
@@ -344,98 +380,151 @@ void Realtime::resizeGL(int w, int h) {
 void Realtime::sceneChanged() {
     RenderData newData;
 
-    if (settings.extraCredit3) {
+    if (settings.extraCredit2) {
         // Procedural venation tree mode
-        newData = venation::buildProceduralTreeRenderData();
-    } else {
-        // Original behavior: parse scene file
-        if (settings.sceneFilePath.empty()) {
-            std::cerr << "No scene file path set in settings.\n";
-            return;
+        newData = venation::buildProceduralTreeRenderData(false);
+        m_renderData = std::move(newData);
+
+        // Camera from renderData (works for both parsed and procedural scenes)
+        const SceneCameraData &cam = m_renderData.cameraData;
+        m_camEye = glm::vec3(cam.pos);
+
+        glm::vec3 look = glm::vec3(cam.look);
+        if (glm::length(look) < 1e-6f) {
+            look = glm::vec3(0.f, 0.f, -1.f);
         }
+        m_camLook = glm::normalize(look);
 
-        bool ok = SceneParser::parse(settings.sceneFilePath, newData);
-        if (!ok) {
-            std::cerr << "Failed to parse scene file: " << settings.sceneFilePath << "\n";
-            return;
+        glm::vec3 up = glm::vec3(cam.up);
+        if (glm::length(up) < 1e-6f) {
+            up = glm::vec3(0.f, 1.f, 0.f);
         }
+        m_camUp = glm::normalize(up);
+
     }
+    if (settings.extraCredit4) {
+        // Procedural venation tree mode
+        bezier = true;
+        newData = venation::buildProceduralTreeRenderData(bezier);
+        m_renderData = std::move(newData);
 
-    m_renderData = std::move(newData);
+        // Camera from renderData (works for both parsed and procedural scenes)
+        const SceneCameraData &cam = m_renderData.cameraData;
+        m_camEye = glm::vec3(cam.pos);
 
-    // Camera from renderData (works for both parsed and procedural scenes)
-    const SceneCameraData &cam = m_renderData.cameraData;
-    m_camEye = glm::vec3(cam.pos);
+        glm::vec3 look = glm::vec3(cam.look);
+        if (glm::length(look) < 1e-6f) {
+            look = glm::vec3(0.f, 0.f, -1.f);
+        }
+        m_camLook = glm::normalize(look);
 
-    glm::vec3 look = glm::vec3(cam.look);
-    if (glm::length(look) < 1e-6f) {
-        look = glm::vec3(0.f, 0.f, -1.f);
-    }
-    m_camLook = glm::normalize(look);
-
-    glm::vec3 up = glm::vec3(cam.up);
-    if (glm::length(up) < 1e-6f) {
-        up = glm::vec3(0.f, 1.f, 0.f);
-    }
-    m_camUp = glm::normalize(up);
-
-    rebuildSceneMeshes();
-    update(); // asks for a PaintGL() call to occur
-
-    // // old version from project
-    // if (settings.sceneFilePath.empty()) {
-    //     std::cerr << "No scene file path set in settings.\n";
-    //     return;
-    // }
-
-    // RenderData newData;
-    // bool ok = SceneParser::parse(settings.sceneFilePath, newData);
-    // if (!ok) {
-    //     std::cerr << "Failed to parse scene file: " << settings.sceneFilePath << "\n";
-    //     return;
-    // }
-
-    // m_renderData = std::move(newData);
-
-    // // Camera from scene
-    // const SceneCameraData &cam = m_renderData.cameraData;
-    // m_camEye = glm::vec3(cam.pos);
-    // glm::vec3 look = glm::vec3(cam.look);
-    // if (glm::length(look) < 1e-6f) {
-    //     // If the JSON uses 'focus' not 'look', your parser should already have
-    //     // converted it; this is just a fallback.
-    //     look = glm::vec3(0.f, 0.f, -1.f);
-    // }
-    // m_camLook = glm::normalize(look);
-
-    // glm::vec3 up = glm::vec3(cam.up);
-    // if (glm::length(up) < 1e-6f) {
-    //     up = glm::vec3(0.f, 1.f, 0.f);
-    // }
-    // m_camUp = glm::normalize(up);
-
-    // rebuildSceneMeshes();
-    // // added above
-    // update(); // asks for a PaintGL() call to occur
-}
-
-void Realtime::settingsChanged() {
-    bool modeChanged  = (settings.extraCredit3 != m_lastExtraCredit3);
-    bool fileChanged  = (!settings.extraCredit3 && settings.sceneFilePath != m_lastSceneFilePath);
-
-    m_lastExtraCredit3  = settings.extraCredit3;
-    m_lastSceneFilePath = settings.sceneFilePath;
-
-    if (modeChanged || fileChanged) {
-        // Either switched between file/procedural, or chose a new scene file:
-        // need to rebuild RenderData and meshes.
-        sceneChanged();
-    } else {
-        // Geometry source is the same; only parameters that affect tessellation /
-        // shading / near/far planes changed. Just rebuild VAOs/VBOs and redraw.
+        glm::vec3 up = glm::vec3(cam.up);
+        if (glm::length(up) < 1e-6f) {
+            up = glm::vec3(0.f, 1.f, 0.f);
+        }
+        m_camUp = glm::normalize(up);
         rebuildSceneMeshes();
         update();
+
     }
+
+    if (settings.extraCredit3 && !m_venationSimInitialized) {
+        venation::Params p;
+        p.initialSources    = 200;
+        p.maxSteps          = 80;
+        p.segmentLength     = 0.18f;
+        p.killDistance      = 0.22f;
+        p.minNodeSeparation = 0.09f;
+        p.knnPerSource      = 1;
+        p.directionJitter   = 0.12f;
+
+        m_venationSim = std::make_unique<venation::Venation>(p);
+        m_venationSim->run();
+        m_venationSimInitialized = true;
+        m_currentEdgeIndex = 0; // start growth from first edge
+
+        m_renderData = buildProceduralTreeRenderDataIncremental(*m_venationSim, 0);
+        rebuildSceneMeshes();
+
+    }
+
+    // Only update renderData once if mode changed to file-based
+    if (!settings.extraCredit3) {
+        RenderData newData;
+        if (!settings.sceneFilePath.empty()) {
+            SceneParser::parse(settings.sceneFilePath, newData);
+            m_renderData = std::move(newData);
+
+            // Camera setup
+            const SceneCameraData &cam = m_renderData.cameraData;
+            m_camEye = glm::vec3(cam.pos);
+
+            glm::vec3 look = glm::vec3(cam.look);
+            if (glm::length(look) < 1e-6f) {
+                look = glm::vec3(0.f, 0.f, -1.f);
+            }
+            m_camLook = glm::normalize(look);
+
+            glm::vec3 up = glm::vec3(cam.up);
+            if (glm::length(up) < 1e-6f) {
+                up = glm::vec3(0.f, 1.f, 0.f);
+            }
+            m_camUp = glm::normalize(up);
+            rebuildSceneMeshes();
+            update();
+        }
+    }
+}
+
+void Realtime::growTreeStep() {
+    if (!m_venationSimInitialized) return;
+
+    if (m_currentEdgeIndex >= (int)m_venationSim->edges().size()) {
+        // Stop timer when tree is fully grown
+        return;
+    }
+
+    m_currentEdgeIndex += 1;
+    if (m_currentEdgeIndex > (int)m_venationSim->edges().size())
+        m_currentEdgeIndex = (int)m_venationSim->edges().size();
+
+    // m_renderData = buildProceduralTreeRenderDataIncremental(
+    //     *m_venationSim, m_currentEdgeIndex);
+    m_renderData.shapes = buildProceduralTreeRenderDataIncremental(
+                              *m_venationSim, m_currentEdgeIndex).shapes;
+
+
+    rebuildSceneMeshes();
+    update();
+}
+
+
+void Realtime::settingsChanged() {
+    // bool modeChanged  = (settings.extraCredit3 != m_lastExtraCredit3);
+    // bool fileChanged  = (!settings.extraCredit3 && settings.sceneFilePath != m_lastSceneFilePath);
+
+    // m_lastExtraCredit3  = settings.extraCredit3;
+    // m_lastSceneFilePath = settings.sceneFilePath;
+
+    // if (modeChanged || fileChanged) {
+    //     // Either switched between file/procedural, or chose a new scene file:
+    //     // need to rebuild RenderData and meshes.
+    //     sceneChanged();
+    // }
+    // else if(settings.extraCredit2){
+    //     sceneChanged();
+    // }
+    // else {
+    //     // Geometry source is the same; only parameters that affect tessellation /
+    //     // shading / near/far planes changed. Just rebuild VAOs/VBOs and redraw.
+    //     sceneChanged();
+    //     rebuildSceneMeshes();
+    //     update();
+    // }
+
+    sceneChanged();
+    rebuildSceneMeshes();
+    update();
     // sceneChanged();
     // // also from old project
     // rebuildSceneMeshes();
@@ -513,7 +602,7 @@ void Realtime::timerEvent(QTimerEvent *event) {
     // Use deltaTime and m_keyMap here to move around
 
     // Move at 5 units/sec according to key spec.
-    const float speed = 5.0f;
+    const float speed = 2.0f;
 
     glm::vec3 move(0.0f);
     glm::vec3 forward = glm::normalize(m_camLook);

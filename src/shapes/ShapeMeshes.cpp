@@ -78,39 +78,72 @@ static std::vector<float> generatePrimitiveData(const ScenePrimitive &prim,
 
 ShapeMesh createShapeMesh(const ScenePrimitive &prim,
                           int shapeParam1,
-                          int shapeParam2)
+                          int shapeParam2, bool bezier)
 {
     ShapeMesh mesh;
 
     std::vector<float> data = generatePrimitiveData(prim, shapeParam1, shapeParam2);
     if (data.empty()) return mesh;
 
-    mesh.vertexCount = static_cast<int>(data.size() / 6); // pos(3) + normal(3)
+    // only bezier
+    if(bezier){
+        mesh.vertexCount = static_cast<int>(data.size() / 6); // pos(3) + normal(3)
+
+        glGenVertexArrays(1, &mesh.vao);
+        glGenBuffers(1, &mesh.vbo);
+
+        glBindVertexArray(mesh.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     data.size() * sizeof(float),
+                     data.data(),
+                     GL_STATIC_DRAW);
+
+        // layout: location 0 -> position, location 1 -> normal
+        GLsizei stride = 6 * sizeof(float);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
+                              stride,
+                              reinterpret_cast<void*>(0));
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
+                              stride,
+                              reinterpret_cast<void*>(3 * sizeof(float)));
+
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        return mesh;
+    }
+
+    mesh.vertexCount = data.size() / 14;
+    GLsizei stride = 14 * sizeof(float);
 
     glGenVertexArrays(1, &mesh.vao);
     glGenBuffers(1, &mesh.vbo);
 
     glBindVertexArray(mesh.vao);
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 data.size() * sizeof(float),
-                 data.data(),
-                 GL_STATIC_DRAW);
 
-    // layout: location 0 -> position, location 1 -> normal
-    GLsizei stride = 6 * sizeof(float);
+    glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
+
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
-                          stride,
-                          reinterpret_cast<void*>(0));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
 
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
-                          stride,
-                          reinterpret_cast<void*>(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
+
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)(11 * sizeof(float)));
 
     glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     return mesh;
 }

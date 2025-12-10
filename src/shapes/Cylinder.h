@@ -10,7 +10,14 @@ public:
     std::vector<float> generateShape() { return m_vertexData; }
 
 private:
-    void insertVec3(std::vector<float> &data, glm::vec3 v);
+    void insertVec3(std::vector<float> &dst, glm::vec3 &pos, const glm::vec3 &n,
+                              const glm::vec2 &uv,
+                              const glm::vec3 &t,
+                    const glm::vec3 &b);
+    void pushVertex(std::vector<float> &dst, const glm::vec3 &pos, const glm::vec3 &n,
+                    const glm::vec2 &uv,
+                    const glm::vec3 &t,
+                    const glm::vec3 &b);
     void setVertexData();
 
     // helpers

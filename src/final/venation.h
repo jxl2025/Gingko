@@ -39,6 +39,9 @@ public:
 
     void run();
 
+    const Params &getParams() const { return m_params; }
+
+
     const std::vector<Node> &nodes() const { return m_nodes; }
     const std::vector<Edge> &edges() const { return m_edges; }
 
@@ -59,6 +62,9 @@ private:
 
 // Build a complete RenderData object containing a venation “tree”
 // represented as cylinders, ready for Realtime to render.
-RenderData buildProceduralTreeRenderData();
+RenderData buildProceduralTreeRenderData(bool bezier);
+RenderData buildProceduralTreeRenderDataIncremental(
+    const Venation &sim,
+    int maxEdgesToShow);
 
 } // namespace venation

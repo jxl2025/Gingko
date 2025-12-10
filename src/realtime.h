@@ -16,6 +16,7 @@
 // added these
 #include "utils/sceneparser.h"   // RenderData, SceneParser
 #include "shapes/ShapeMeshes.h"   // ShapeMesh
+#include "final/venation.h"
 
 class Realtime : public QOpenGLWidget
 {
@@ -66,6 +67,8 @@ private:
     // Helper to rebuild all meshes from m_renderData.shapes
     void rebuildSceneMeshes();
 
+    void growTreeStep();
+
     // Helpers for lighting
     GLuint m_phongProgram = 0;
     void uploadLights(GLuint program) const;
@@ -78,4 +81,17 @@ private:
     // reduce unnecessary rebuilding of vao/vbos!
     bool        m_lastExtraCredit3 = false;
     std::string m_lastSceneFilePath;
+
+    // bump mapping
+    GLuint m_bumpTexture;
+    float m_bumpWidth;
+    float m_bumpHeight;
+
+    // In Realtime.h or class declaration
+    int m_currentEdgeIndex = 0;   // How many edges are currently visible
+    float m_growthSpeed = 1.0f;   // Edges per frame
+    bool m_venationSimInitialized = false;
+    std::unique_ptr<venation::Venation> m_venationSim;
+
+    bool bezier = false;
 };

@@ -2,6 +2,9 @@
 
 in vec3 v_posWorld;
 in vec3 v_normWorld;
+in vec2 v_uv;//new bump
+in vec3 v_tangentW;
+in vec3 v_bitangentW;
 
 out vec4 fragColor;
 
@@ -9,6 +12,8 @@ out vec4 fragColor;
 uniform float u_globalKa;
 uniform float u_globalKd;
 uniform float u_globalKs;
+
+uniform sampler2D u_bumpMap; // new bump
 
 // Camera position in world space
 uniform vec3 u_camPos;
@@ -73,6 +78,23 @@ void main() {
     vec3 N = normalize(v_normWorld);
     vec3 V = normalize(u_camPos - v_posWorld);
 
+    // BUMP MAPPING – height map derivative method
+    float height = texture(u_bumpMap, v_uv).r;
+    float hU = texture(u_bumpMap, v_uv + vec2(0.001, 0.0)).r;
+    float hV = texture(u_bumpMap, v_uv + vec2(0.0, 0.001)).r;
+
+    float scale = 10.0;
+
+    float dU = (hU - height) * scale;
+    float dV = (hV - height) * scale;
+    vec3 T = normalize(v_tangentW);
+    vec3 B = normalize(v_bitangentW);
+    vec3 bumpedNormal = normalize(N + dU * T + dV * B); // final shading normal
+
+    N = bumpedNormal;
+
+    // end bump
+
     // Global ambient, independent of lights
     vec3 color = u_globalKa * u_kA;
 
@@ -121,4 +143,13 @@ void main() {
     }
 
     fragColor = vec4(color, 1.0);
+    // color = 0.5 * (N + vec3(1.0)); // remap [-1,1] -> [0,1]
+    // fragColor = vec4(color, 1.0);
+
+    // float H = texture(u_bumpMap, v_uv).r;
+    // fragColor = vec4(H, H, H, 1.0);
+    // vec3 outN = 0.5*(N + vec3(1.0));
+    // fragColor = vec4(outN,1.0);
+
+
 }

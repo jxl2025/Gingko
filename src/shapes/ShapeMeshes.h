@@ -22,6 +22,6 @@ struct ShapeMesh {
 
 ShapeMesh createShapeMesh(const ScenePrimitive &prim,
                           int shapeParam1,
-                          int shapeParam2);
+                          int shapeParam2, bool bezier);
 
 void deleteShapeMesh(ShapeMesh &mesh);
