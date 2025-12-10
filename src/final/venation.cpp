@@ -31,12 +31,70 @@ Venation::Venation(const Params &p)
     initSources();
 }
 
-glm::vec3 Venation::randomPointInBox()  {
-    std::uniform_real_distribution<float> dx(m_params.domainMin.x, m_params.domainMax.x);
-    std::uniform_real_distribution<float> dy(m_params.domainMin.y, m_params.domainMax.y);
-    std::uniform_real_distribution<float> dz(m_params.domainMin.z, m_params.domainMax.z);
-    return glm::vec3(dx(m_rng), dy(m_rng), dz(m_rng));
+// glm::vec3 Venation::randomPointInBox()  {
+//     std::uniform_real_distribution<float> dx(m_params.domainMin.x, m_params.domainMax.x);
+//     std::uniform_real_distribution<float> dy(m_params.domainMin.y, m_params.domainMax.y);
+//     std::uniform_real_distribution<float> dz(m_params.domainMin.z, m_params.domainMax.z);
+//     return glm::vec3(dx(m_rng), dy(m_rng), dz(m_rng));
+// }
+
+// to make the auxin distribute some way above the initial veins
+// glm::vec3 Venation::randomPointInBox() {
+//     // Compute global center and extents of the domain.
+//     glm::vec3 center = 0.5f * (m_params.domainMin + m_params.domainMax);
+//     float widthX  = m_params.domainMax.x - m_params.domainMin.x;
+//     float widthZ  = m_params.domainMax.z - m_params.domainMin.z;
+//     float heightY = m_params.domainMax.y - m_params.domainMin.y;
+
+//     // ---- You can tweak these two knobs ----
+//     // Fraction of the total height where auxin slab is centered.
+//     const float slabCenterFrac  = 0.75f;  // 0 = at base, 1 = at top
+//     // Fraction of total height used for slab thickness.
+//     const float slabThicknessFrac = 0.30f; // 30% of height
+
+//     float slabCenterY = m_params.domainMin.y + slabCenterFrac * heightY;
+//     float slabHalfY   = 0.5f * slabThicknessFrac * heightY;
+
+//     // Optionally tighten X/Z so auxin are near the trunk horizontally.
+//     float halfX = 0.4f * widthX;
+//     float halfZ = 0.4f * widthZ;
+
+//     std::uniform_real_distribution<float> dx(center.x - halfX, center.x + halfX);
+//     std::uniform_real_distribution<float> dz(center.z - halfZ, center.z + halfZ);
+//     std::uniform_real_distribution<float> dy(slabCenterY - slabHalfY,
+//                                              slabCenterY + slabHalfY);
+
+//     return glm::vec3(dx(m_rng), dy(m_rng), dz(m_rng));
+// }
+
+// to use sphere instead
+glm::vec3 Venation::randomPointInBox() {
+    glm::vec3 center = 0.5f * (m_params.domainMin + m_params.domainMax);
+
+    float heightY = m_params.domainMax.y - m_params.domainMin.y;
+    // Center the sphere higher up in the box.
+    float yCenter = m_params.domainMin.y + 0.75f * heightY;
+    glm::vec3 sphereCenter(center.x, yCenter, center.z);
+
+    // Radius: something modest relative to domain size.
+    float radius = 0.6f * heightY;
+
+    std::uniform_real_distribution<float> u(0.f, 1.f);
+    std::uniform_real_distribution<float> angle01(0.f, 1.f);
+
+    // Sample direction uniformly on sphere.
+    float z   = 2.f * u(m_rng) - 1.f;
+    float phi = 2.f * glm::pi<float>() * angle01(m_rng);
+    float rXY = std::sqrt(std::max(0.f, 1.f - z*z));
+    glm::vec3 dir(rXY * std::cos(phi), z, rXY * std::sin(phi));
+
+    // Radius with cubic root so density is uniform inside the sphere.
+    float r = radius * std::cbrt(u(m_rng));
+
+    return sphereCenter + r * dir;
 }
+
+
 
 glm::vec3 Venation::jitterDirection(const glm::vec3 &dir) {
     if (m_params.directionJitter <= 0.f) return glm::normalize(dir);
@@ -305,7 +363,7 @@ RenderData buildProceduralTreeRenderData() {
     // Run venation simulation
     Params p;
     p.initialSources    = 200;
-    p.maxSteps          = 20;
+    p.maxSteps          = 80;
     p.segmentLength     = 0.18f;
     p.killDistance      = 0.22f;
     p.minNodeSeparation = 0.09f;
@@ -318,13 +376,58 @@ RenderData buildProceduralTreeRenderData() {
     const auto &nodes = sim.nodes();
     const auto &edges = sim.edges();
 
+    // ------------------------------------------------------------
+    // Flood-fill style "flow" per node: how many leaf tips descend
+    // through this node. Used later to drive branch thickness.
+    // ------------------------------------------------------------
+    const int nNodes = static_cast<int>(nodes.size());
+    std::vector<int>   parent(nNodes, -1);
+    std::vector<int>   outDegree(nNodes, 0);
+
+    for (const Edge &e : edges) {
+        if (e.from < 0 || e.to < 0 ||
+            e.from >= nNodes || e.to >= nNodes) {
+            continue;
+        }
+        parent[e.to]   = e.from;   // tree structure: one parent per node
+        outDegree[e.from]++;       // count children
+    }
+
+    std::vector<float> flow(nNodes, 0.f);
+
+    // Leaves (no children) start with flow = 1
+    for (int i = 0; i < nNodes; ++i) {
+        if (outDegree[i] == 0) {
+            flow[i] = 1.f;
+        }
+    }
+
+    // Accumulate flow upwards from leaves to root(s).
+    // Thanks to construction, parents always have smaller indices,
+    // so reverse index order gives a valid post-order.
+    for (int i = nNodes - 1; i >= 0; --i) {
+        int p = parent[i];
+        if (p >= 0) {
+            flow[p] += flow[i];
+        }
+    }
+
+    // Find max flow for normalization
+    float maxFlow = 0.f;
+    for (int i = 0; i < nNodes; ++i) {
+        maxFlow = std::max(maxFlow, flow[i]);
+    }
+    if (maxFlow <= 0.f) {
+        maxFlow = 1.f;
+    }
+
     // 1) Per-edge vs per-walk branches:
     //    - false: original behavior (one primitive per Edge)
     //    - true : new behavior   (one primitive per maximal degree-2 Walk)
-    constexpr bool kUseWalkBranches      = true;
+    constexpr bool kUseWalkBranches      = false;
 
     // 2) Cylinder vs BezierRing for the actual tube primitive:
-    constexpr bool kUseBezierRingBranches = true;
+    constexpr bool kUseBezierRingBranches = false;
 
     // Basic woody material
     SceneMaterial mat{};
@@ -333,17 +436,60 @@ RenderData buildProceduralTreeRenderData() {
     mat.cSpecular = glm::vec4(0.08f, 0.08f, 0.08f, 1.f);
     mat.shininess = 10.f;
 
+    // Light grey floor material
+    SceneMaterial floorMat{};
+    floorMat.cAmbient  = glm::vec4(0.3f, 0.3f, 0.3f, 1.f);
+    floorMat.cDiffuse  = glm::vec4(0.7f, 0.7f, 0.7f, 1.f);
+    floorMat.cSpecular = glm::vec4(0.05f, 0.05f, 0.05f, 1.f);
+    floorMat.shininess = 5.f;
+
     data.shapes.clear();
 
-    float r = Venation::CylinderRadius;
+    //add floor
+    {
+        // Use the same domain extents as the venation sim
+        float floorThickness = 0.1f; // tweak as you like
+
+        float width  = p.domainMax.x - p.domainMin.x;
+        float depth  = p.domainMax.z - p.domainMin.z;
+
+        // Centered under the tree; top of the floor at domainMin.y
+        glm::vec3 floorCenter;
+        floorCenter.x = 0.5f * (p.domainMin.x + p.domainMax.x);
+        floorCenter.z = 0.5f * (p.domainMin.z + p.domainMax.z);
+        floorCenter.y = p.domainMin.y - 0.5f * floorThickness;
+
+        ScenePrimitive floorPrim{};
+        floorPrim.type     = PrimitiveType::PRIMITIVE_CUBE;
+        floorPrim.material = floorMat;
+
+        // Cube primitive is unit cube centered at origin; scale to our floor size
+        glm::mat4 S_floor = glm::scale(glm::mat4(1.f),
+                                       glm::vec3(width, floorThickness, depth));
+        glm::mat4 T_floor = glm::translate(glm::mat4(1.f), floorCenter);
+
+        RenderShapeData floorShape{};
+        floorShape.primitive = floorPrim;
+        floorShape.ctm       = T_floor * S_floor;
+
+        data.shapes.push_back(floorShape);
+    }
+
+    // float r = Venation::CylinderRadius;
+    float baseR = Venation::CylinderRadius;
 
     if (!kUseWalkBranches) {
         // ------------------------------------------------------------
         // ORIGINAL: one primitive per Edge
         // ----------------------------------------------------------
+        int edgeCount = static_cast<int>(edges.size());
         data.shapes.reserve(edges.size());
+        const float radiusScaleMin = 0.25f; // thinnest branches
+        const float radiusScaleMax = 2.0f;  // thickest trunk
 
-        for (const Edge &e : edges) {
+        // for (const Edge &e : edges) {
+        for (int ei = 0; ei < edgeCount; ++ei) {
+            const Edge &e = edges[ei];
             if (e.from < 0 || e.to < 0 ||
                 e.from >= static_cast<int>(nodes.size()) ||
                 e.to   >= static_cast<int>(nodes.size())) {
@@ -357,6 +503,30 @@ RenderData buildProceduralTreeRenderData() {
             if (!(len > 1e-4f)) continue;
 
             glm::vec3 dir = d / len;
+
+            // float r = Venation::CylinderRadius;
+            // float t = (edgeCount > 1) ? (float)ei / (float)(edgeCount - 1) : 0.f;
+            // // version 1: linear scaling
+            // // Map t in [0,1] to a radius scale.
+            // // Example: oldest = 1.5 * baseR, newest = 0.5 * baseR
+            // float r = baseR * (1.5f - t);  // linear: r in [0.5, 1.5]*baseR
+            // // version 2: nonlinear
+            // // Make the falloff non-linear: most edges get thin quickly.
+            // // Try exponent between 2.0 and 3.0 for strong contrast.
+            // float p = std::pow(t, 2.5f);
+            // // Map to a radius scale:
+            // //  - oldest edge: ~2.0 * baseR
+            // //  - newest edge: ~0.2 * baseR
+            // float radiusScale = 0.2f + 1.8f * (1.0f - p);
+            // float r = baseR * radiusScale;
+            // version 3: flood fill flow
+            float f = flow[e.from]; // how many leaves flow through this branch
+            // Normalize with log so large flows saturate visually:
+            float t = std::log(1.f + f) / std::log(1.f + maxFlow); // in [0,1]
+            float radiusScale =
+                radiusScaleMin + (radiusScaleMax - radiusScaleMin) * t;
+            float r = baseR * radiusScale;
+            r = std::max(0.02f * baseR, r); // avoid degenerate tiny radii
 
             glm::vec3 yAxis(0.f, 1.f, 0.f);
             glm::mat4 R(1.f);
