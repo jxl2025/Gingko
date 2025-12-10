@@ -1,5 +1,6 @@
 #include "final/venation.h"
 #include "final/KDTree3D.h"
+#include "shapes/BezierRing.h"
 #include "utils/sceneparser.h"
 
 #include <glm/gtx/transform.hpp>
@@ -163,6 +164,108 @@ void Venation::run() {
     }
 }
 
+struct Walk {
+    std::vector<int> nodeIndices;
+};
+
+// Build all maximal degree-2 walks in the vein tree.
+// Endpoints have degree != 2 (root, leaves, branch junctions).
+// Interior nodes in a walk have degree == 2.
+static std::vector<Walk> buildWalks(const std::vector<Node> &nodes,
+                                    const std::vector<Edge> &edges)
+{
+    const int n = static_cast<int>(nodes.size());
+    std::vector<std::vector<int>> adj(n);
+    std::vector<int> degree(n, 0);
+
+    // Undirected adjacency from edges
+    for (const Edge &e : edges) {
+        if (e.from < 0 || e.to < 0 || e.from >= n || e.to >= n) {
+            continue;
+        }
+        adj[e.from].push_back(e.to);
+        adj[e.to].push_back(e.from);
+        degree[e.from]++;
+        degree[e.to]++;
+    }
+
+    auto isEndpoint = [&](int v) {
+        return degree[v] != 2;
+    };
+
+    std::vector<bool> visited(n, false);
+    std::vector<Walk> walks;
+
+    // For every endpoint, launch walks along each neighbor.
+    for (int v = 0; v < n; ++v) {
+        if (!isEndpoint(v)) continue;
+
+        for (int nbr : adj[v]) {
+            // If the neighbor is already part of some walk interior, skip
+            if (visited[nbr]) continue;
+
+            Walk w;
+            int prev = v;
+            int cur  = nbr;
+
+            w.nodeIndices.push_back(prev);
+
+            while (true) {
+                w.nodeIndices.push_back(cur);
+                visited[cur] = true;
+
+                if (isEndpoint(cur)) {
+                    // Reached leaf or branching node: end of this walk
+                    break;
+                }
+
+                // degree(cur) == 2: pick the neighbor that is not prev
+                int next = (adj[cur][0] == prev) ? adj[cur][1] : adj[cur][0];
+                prev = cur;
+                cur  = next;
+            }
+
+            if (w.nodeIndices.size() >= 2) {
+                walks.push_back(std::move(w));
+            }
+        }
+    }
+
+    return walks;
+}
+
+static void computeParallelTransportFrames(
+    const std::vector<glm::vec3>& centers,
+    std::vector<glm::vec3>& normals,
+    std::vector<glm::vec3>& binormals)
+{
+    int n = centers.size();
+    normals.resize(n);
+    binormals.resize(n);
+
+    glm::vec3 t0 = glm::normalize(centers[1] - centers[0]);
+    glm::vec3 arbitrary = (std::abs(t0.y) < 0.99f) ? glm::vec3(0,1,0) : glm::vec3(1,0,0);
+    normals[0]   = glm::normalize(glm::cross(t0, arbitrary));
+    binormals[0]= glm::normalize(glm::cross(t0, normals[0]));
+
+    for (int i = 1; i < n; ++i) {
+        glm::vec3 ti = glm::normalize(centers[i] - centers[i-1]);
+        glm::vec3 v = glm::cross(t0, ti);
+
+        if (glm::length(v) < 1e-5f) {
+            normals[i]   = normals[i-1];
+            binormals[i]= binormals[i-1];
+        } else {
+            float a = std::acos(glm::clamp(glm::dot(t0, ti), -1.f, 1.f));
+            v = glm::normalize(v);
+            glm::mat3 R = glm::mat3(glm::rotate(glm::mat4(1.f), a, v));
+            normals[i]   = R * normals[i-1];
+            binormals[i]= R * binormals[i-1];
+        }
+        t0 = ti;
+    }
+}
+
 // RenderData builder converts vein graph into oriented cylinders
 
 RenderData buildProceduralTreeRenderData() {
@@ -202,7 +305,7 @@ RenderData buildProceduralTreeRenderData() {
     // Run venation simulation
     Params p;
     p.initialSources    = 200;
-    p.maxSteps          = 100;
+    p.maxSteps          = 20;
     p.segmentLength     = 0.18f;
     p.killDistance      = 0.22f;
     p.minNodeSeparation = 0.09f;
@@ -215,6 +318,14 @@ RenderData buildProceduralTreeRenderData() {
     const auto &nodes = sim.nodes();
     const auto &edges = sim.edges();
 
+    // 1) Per-edge vs per-walk branches:
+    //    - false: original behavior (one primitive per Edge)
+    //    - true : new behavior   (one primitive per maximal degree-2 Walk)
+    constexpr bool kUseWalkBranches      = true;
+
+    // 2) Cylinder vs BezierRing for the actual tube primitive:
+    constexpr bool kUseBezierRingBranches = true;
+
     // Basic woody material
     SceneMaterial mat{};
     mat.cAmbient  = glm::vec4(0.10f, 0.06f, 0.03f, 1.f);
@@ -223,58 +334,115 @@ RenderData buildProceduralTreeRenderData() {
     mat.shininess = 10.f;
 
     data.shapes.clear();
-    data.shapes.reserve(edges.size());
 
     float r = Venation::CylinderRadius;
 
-    for (const Edge &e : edges) {
-        if (e.from < 0 || e.to < 0 ||
-            e.from >= static_cast<int>(nodes.size()) ||
-            e.to   >= static_cast<int>(nodes.size())) {
-            continue;
-        }
+    if (!kUseWalkBranches) {
+        // ------------------------------------------------------------
+        // ORIGINAL: one primitive per Edge
+        // ----------------------------------------------------------
+        data.shapes.reserve(edges.size());
 
-        glm::vec3 p0 = nodes[e.from].pos;
-        glm::vec3 p1 = nodes[e.to].pos;
-        glm::vec3 d  = p1 - p0;
-        float len    = glm::length(d);
-        if (!(len > 1e-4f)) continue;
-
-        glm::vec3 dir = d / len;
-
-        glm::vec3 yAxis(0.f, 1.f, 0.f);
-        glm::mat4 R(1.f);
-
-        float cosTheta = glm::dot(yAxis, dir);
-        cosTheta = std::clamp(cosTheta, -1.f, 1.f);
-        glm::vec3 axis = glm::cross(yAxis, dir);
-
-        if (glm::length(axis) < 1e-8f) {
-            if (cosTheta < 0.f) {
-                R = glm::rotate(glm::mat4(1.f), glm::pi<float>(), glm::vec3(1.f, 0.f, 0.f));
+        for (const Edge &e : edges) {
+            if (e.from < 0 || e.to < 0 ||
+                e.from >= static_cast<int>(nodes.size()) ||
+                e.to   >= static_cast<int>(nodes.size())) {
+                continue;
             }
-        } else {
-            axis = glm::normalize(axis);
-            float angle = std::acos(cosTheta);
-            R = glm::rotate(glm::mat4(1.f), angle, axis);
+
+            glm::vec3 p0 = nodes[e.from].pos;
+            glm::vec3 p1 = nodes[e.to].pos;
+            glm::vec3 d  = p1 - p0;
+            float len    = glm::length(d);
+            if (!(len > 1e-4f)) continue;
+
+            glm::vec3 dir = d / len;
+
+            glm::vec3 yAxis(0.f, 1.f, 0.f);
+            glm::mat4 R(1.f);
+
+            float cosTheta = glm::dot(yAxis, dir);
+            cosTheta = std::clamp(cosTheta, -1.f, 1.f);
+            glm::vec3 axis = glm::cross(yAxis, dir);
+
+            if (glm::length(axis) < 1e-8f) {
+                if (cosTheta < 0.f) {
+                    R = glm::rotate(glm::mat4(1.f),
+                                    glm::pi<float>(),
+                                    glm::vec3(1.f, 0.f, 0.f));
+                }
+            } else {
+                axis = glm::normalize(axis);
+                float angle = std::acos(cosTheta);
+                R = glm::rotate(glm::mat4(1.f), angle, axis);
+            }
+
+            glm::vec3 center = 0.5f * (p0 + p1);
+
+            glm::mat4 S = glm::scale(glm::mat4(1.f), glm::vec3(r, len, r));
+            glm::mat4 T = glm::translate(glm::mat4(1.f), center);
+
+            ScenePrimitive prim{};
+            if (kUseBezierRingBranches) {
+                prim.type = PrimitiveType::PRIMITIVE_BEZIER_RING;
+            } else {
+                prim.type = PrimitiveType::PRIMITIVE_CYLINDER;
+            }
+            prim.material = mat;
+
+            RenderShapeData shape{};
+            shape.primitive = prim;
+            shape.ctm       = T * R * S;
+
+            data.shapes.push_back(shape);
         }
+    } else {
+        // ------------------------------------------------------
+        // NEW: one primitive per maximal degree-2 Walk
+        // ------------------------------------------------------------
+        auto walks = buildWalks(nodes, edges);
+        data.shapes.reserve(walks.size());
 
-        glm::vec3 center = 0.5f * (p0 + p1);
+        for (const Walk &w : walks) {
+            std::vector<glm::vec3> centers;
+            for (int idx : w.nodeIndices) {
+                centers.push_back(nodes[idx].pos);
+            }
 
-        glm::mat4 S = glm::scale(glm::mat4(1.f), glm::vec3(r, len, r));
-        // Note: Cylinder primitive is [-0.5, 0.5] in Y, so scale by len/2 and rely
-        // on model matrix to position the center correctly.
-        glm::mat4 T = glm::translate(glm::mat4(1.f), center);
+            std::vector<glm::vec3> normals, binormals;
+            computeParallelTransportFrames(centers, normals, binormals);
 
-        ScenePrimitive prim{};
-        prim.type     = PrimitiveType::PRIMITIVE_CYLINDER;
-        prim.material = mat;
+            std::vector<BezierRingFrame> frames;
+            float r = 0.5f * Venation::CylinderRadius;
 
-        RenderShapeData shape{};
-        shape.primitive = prim;
-        shape.ctm       = T * R * S;
+            for (int i = 0; i < (int)centers.size(); ++i) {
+                frames.push_back({
+                    centers[i],
+                    normals[i],
+                    binormals[i],
+                    r
+                });
+            }
 
-        data.shapes.push_back(shape);
+            //Register this walk globally
+            int pathId = (int)g_bezierTubeFrames.size();
+            g_bezierTubeFrames.push_back(frames);
+
+            ScenePrimitive prim{};
+            prim.type = PrimitiveType::PRIMITIVE_BEZIER_RING;
+            prim.material = mat;
+
+            // CONNECT THIS PRIMITIVE TO ITS FRAME PATH
+            prim.tubePathId = pathId;
+
+            RenderShapeData shape{};
+            shape.primitive = prim;
+
+            // World-space geometry. identity transform is correct
+            shape.ctm = glm::mat4(1.0f);
+
+            data.shapes.push_back(shape);
+        }
     }
 
     return data;

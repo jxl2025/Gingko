@@ -18,7 +18,8 @@ enum class PrimitiveType {
     PRIMITIVE_CONE,
     PRIMITIVE_CYLINDER,
     PRIMITIVE_SPHERE,
-    PRIMITIVE_MESH
+    PRIMITIVE_MESH,
+    PRIMITIVE_BEZIER_RING
 };
 
 // Enum of the types of transformations that can be applied
@@ -147,6 +148,8 @@ struct ScenePrimitive {
     PrimitiveType type;
     SceneMaterial material;
     std::string meshfile; // Used for triangle meshes
+
+    int tubePathId = -1;
 };
 
 // Struct which contains data for a transformation.

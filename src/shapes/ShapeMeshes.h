@@ -11,6 +11,7 @@ class Cube;
 class Cylinder;
 class Cone;
 class Sphere;
+class BezierRing;
 // add others (Tet, Triangle) if you want them rendered too
 
 struct ShapeMesh {

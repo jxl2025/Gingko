@@ -65,6 +65,8 @@ add_library(StaticGLEW STATIC glew/src/glew.c
     src/final/KDTree3D.cpp
     src/final/venation.h
     src/final/venation.cpp
+    src/shapes/BezierRing.h
+    src/shapes/BezierRing.cpp
 )
 include_directories(${PROJECT_NAME} PRIVATE glew/include)
 

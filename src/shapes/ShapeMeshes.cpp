@@ -5,6 +5,7 @@
 #include "Cylinder.h"
 #include "Cone.h"
 #include "Sphere.h"
+#include "BezierRing.h"
 // #include "Tet.h"
 // #include "Triangle.h"
 
@@ -33,6 +34,38 @@ static std::vector<float> generatePrimitiveData(const ScenePrimitive &prim,
     case PrimitiveType::PRIMITIVE_CYLINDER: {
         Cylinder s;
         s.updateParams(param1, param2);
+        return s.generateShape();
+    }
+    // case PrimitiveType::PRIMITIVE_BEZIER_RING: {
+    //     BezierRing s;
+
+    //     // Use world-space walk frames if available
+    //     if (prim.tubePathId >= 0 &&
+    //         prim.tubePathId < (int)g_bezierTubeFrames.size()) {
+
+    //         s.setFrames(g_bezierTubeFrames[prim.tubePathId]);
+
+    //     } else {
+    //         // Fallback to straight procedural tube
+    //         s.updateParams(param1, param2);
+    //     }
+
+    //     return s.generateShape();
+    // }
+    case PrimitiveType::PRIMITIVE_BEZIER_RING: {
+        BezierRing s;
+
+        // 1) Always apply tessellation params from UI
+        s.updateParams(param1, param2);
+
+        // 2) If this primitive is one of the venation tubes, attach its frames
+        if (prim.tubePathId >= 0 &&
+            prim.tubePathId < (int)g_bezierTubeFrames.size()) {
+
+            s.setFrames(g_bezierTubeFrames[prim.tubePathId]);
+            // setFrames() calls setVertexData(), which now uses the updated m_param2
+        }
+
         return s.generateShape();
     }
     default:

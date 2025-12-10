@@ -33,7 +33,7 @@ struct Params {
 
 class Venation {
 public:
-    static constexpr float CylinderRadius = 0.03f; // fixed radius for all cylinders
+    static constexpr float CylinderRadius = 0.1f; // fixed radius for all cylinders
 
     explicit Venation(const Params &p = Params());
 
