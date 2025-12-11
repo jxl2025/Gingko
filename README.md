@@ -15,3 +15,13 @@ additional features:
 - the auxin ('sources' in the code) is now in a sphere so the tree can look more realistic (growing straight up a bit before branching out as you said)
 - there's now a floor
 - since we're mainly going with the cylinders, I used an additional algorithm to make it so that the radius shrinks the 'newer' a branch is.
+
+### Additional visualization to the video
+replacing cylinders with bezier tubes with perturbed control points: <img width="1832" height="1372" alt="bezier-tubes-instead-of-cylinders" src="https://github.com/user-attachments/assets/f055bc35-8753-4ca3-a0d5-a7b3a7dc5317" />
+
+using tubes spanning maximal degree-2 paths over the tree's underlying graph (lower meshing resolution): <img width="1832" height="1372" alt="bezier-tubes-over-multiple-edges-low-res" src="https://github.com/user-attachments/assets/abf7136c-015a-4ace-a369-4b506d5e9436" />
+
+using tubes spanning maximal degree-2 paths over the tree's underlying graph (higher meshing resolution): <img width="1832" height="1372" alt="bezier-tubes-over-multiple-edges-high-res" src="https://github.com/user-attachments/assets/44208e39-ace6-4cd5-b13f-e207dede750e" />
+
+the tree if we put auxins in a cube region some distance above the initial tree nodes: <img width="1832" height="1372" alt="auxin-in-cube-above-the-starter-nodes" src="https://github.com/user-attachments/assets/af425a29-e31d-47c3-9e43-e07bbbb6a158" />
+
