@@ -69,6 +69,20 @@ private:
 
     void growTreeStep();
 
+    void updateSnow();
+    void initSnow(int numParticles = 500);
+
+    struct SnowParticle {
+        glm::vec3 pos;
+        glm::vec3 velocity;
+    };
+
+    std::vector<SnowParticle> m_snowParticles;
+
+    ShapeMesh m_cubeMesh;
+    void initCubeMesh();
+
+
     // Helpers for lighting
     GLuint m_phongProgram = 0;
     void uploadLights(GLuint program) const;
@@ -94,4 +108,7 @@ private:
     std::unique_ptr<venation::Venation> m_venationSim;
 
     bool bezier = false;
+
+    GLuint quadVAO, quadVBO;
+    GLuint gradientProgram = 0;
 };

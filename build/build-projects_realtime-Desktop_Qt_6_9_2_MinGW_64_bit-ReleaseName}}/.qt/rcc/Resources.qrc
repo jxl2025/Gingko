@@ -2,6 +2,8 @@
   <qresource prefix="/">
     <file alias="resources/shaders/default.frag">C:/Users/masik/cs1230/Gingko/resources/shaders/default.frag</file>
     <file alias="resources/shaders/default.vert">C:/Users/masik/cs1230/Gingko/resources/shaders/default.vert</file>
+    <file alias="resources/shaders/gradient.frag">C:/Users/masik/cs1230/Gingko/resources/shaders/gradient.frag</file>
+    <file alias="resources/shaders/gradient.vert">C:/Users/masik/cs1230/Gingko/resources/shaders/gradient.vert</file>
     <file alias="resources/bump.png">C:/Users/masik/cs1230/Gingko/resources/bump.png</file>
   </qresource>
 </RCC>

@@ -11,6 +11,8 @@
 #include <cmath>
 // added for final project
 #include "final/venation.h"
+#include <glm/gtc/matrix_transform.hpp>
+
 
 // ================== Rendering the Scene!
 
@@ -39,6 +41,11 @@ Realtime::Realtime(QWidget *parent)
     QTimer *growTreeTimer = new QTimer(this);
     connect(growTreeTimer, &QTimer::timeout, this, &Realtime::growTreeStep);
     growTreeTimer->start(30); // ~33 FPS
+
+    if (settings.extraCredit1) {
+        initSnow();
+    }
+
 }
 
 // added
@@ -255,8 +262,62 @@ void Realtime::finish() {
     this->doneCurrent();
 }
 
+void Realtime::initCubeMesh() {
+    // Define a simple cube: 8 vertices, 12 triangles
+    std::vector<glm::vec3> positions = {
+        {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f},
+        {-0.5f, -0.5f,  0.5f}, {0.5f, -0.5f,  0.5f}, {0.5f, 0.5f,  0.5f}, {-0.5f, 0.5f,  0.5f}
+    };
+
+    std::vector<GLuint> indices = {
+        0,1,2, 2,3,0, // back
+        4,5,6, 6,7,4, // front
+        0,4,7, 7,3,0, // left
+        1,5,6, 6,2,1, // right
+        3,2,6, 6,7,3, // top
+        0,1,5, 5,4,0  // bottom
+    };
+
+    m_cubeMesh.vertexCount = indices.size();
+
+    glGenVertexArrays(1, &m_cubeMesh.vao);
+    glBindVertexArray(m_cubeMesh.vao);
+
+    GLuint vbo, ebo;
+    glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, positions.size() * sizeof(glm::vec3), positions.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0); // assuming position is location 0 in shader
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+
+    glBindVertexArray(0);
+}
+
+struct Vertex {
+    glm::vec3 pos;
+    glm::vec3 color;
+};
+
+std::vector<Vertex> quadVertices = {
+    {{-1.f, -1.f, -1.f}, {0.05f, 0.05f, 0.2f}}, // bottom-left
+    {{ 1.f, -1.f, -1.f}, {0.05f, 0.05f, 0.2f}}, // bottom-right
+    {{-1.f,  1.f, -1.f}, {0.1f, 0.1f, 0.5f}},   // top-left
+    {{ 1.f,  1.f, -1.f}, {0.1f, 0.1f, 0.5f}}    // top-right
+};
+
+
+
 void Realtime::initializeGL() {
     m_devicePixelRatio = this->devicePixelRatio();
+
+    // glClearColor(0.5f, 0.8f, 1.0f, 1.0f);
+
 
     m_timer = startTimer(1000/60);
     m_elapsedTimer.start();
@@ -269,6 +330,7 @@ void Realtime::initializeGL() {
         std::cerr << "Error while initializing GL: " << glewGetErrorString(err) << std::endl;
     }
     std::cout << "Initialized GL: Version " << glewGetString(GLEW_VERSION) << std::endl;
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Allows OpenGL to draw objects appropriately on top of one another
     glEnable(GL_DEPTH_TEST);
@@ -277,10 +339,31 @@ void Realtime::initializeGL() {
     // Tells OpenGL how big the screen is
     glViewport(0, 0, size().width() * m_devicePixelRatio, size().height() * m_devicePixelRatio);
 
+    glGenVertexArrays(1, &quadVAO);
+    glGenBuffers(1, &quadVBO);
+
+    glBindVertexArray(quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, quadVertices.size() * sizeof(Vertex), quadVertices.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0); // position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+
+    glEnableVertexAttribArray(1); // color
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+
+    glBindVertexArray(0);
+
+
     // Students: anything requiring OpenGL calls when the program starts should be done here
     m_phongProgram = ShaderLoader::createShaderProgram(
         ":/resources/shaders/default.vert",
         ":/resources/shaders/default.frag"
+        );
+
+    gradientProgram = ShaderLoader::createShaderProgram(
+        ":/resources/shaders/gradient.vert",
+        ":/resources/shaders/gradient.frag"
         );
 
     //bump mapping
@@ -298,11 +381,24 @@ void Realtime::initializeGL() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    initCubeMesh();
+
 }
 
 void Realtime::paintGL() {
     // Students: anything requiring OpenGL calls every frame should be done here
+    //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST); // background doesn't need depth
+
+    glUseProgram(gradientProgram);
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+
+    glEnable(GL_DEPTH_TEST); // restore depth test for scene
+
 
     if (!m_phongProgram || m_shapeMeshes.empty() || m_renderData.shapes.empty()) {
         return;
@@ -348,6 +444,10 @@ void Realtime::paintGL() {
     // Lights + global coefficients
     uploadLights(m_phongProgram);
 
+    //updateSnow(); // move particles
+
+
+
     // Draw each shape
     std::size_t n = std::min(m_shapeMeshes.size(), m_renderData.shapes.size());
     for (std::size_t i = 0; i < n; ++i) {
@@ -359,6 +459,7 @@ void Realtime::paintGL() {
         glUniformMatrix4fv(glGetUniformLocation(m_phongProgram, "u_model"),
                            1, GL_FALSE, &M[0][0]);
 
+
         // Material
         uploadMaterial(m_phongProgram, shape.primitive.material);
 
@@ -366,6 +467,31 @@ void Realtime::paintGL() {
         glBindVertexArray(mesh.vao);
         glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
     }
+
+    if (settings.extraCredit1) {
+        updateSnow(); // move particles
+
+        for (const auto &p : m_snowParticles) {
+            // Render each particle using a **single cube mesh**
+            glm::mat4 T = glm::translate(glm::mat4(1.f), p.pos);
+            glm::mat4 S = glm::scale(glm::mat4(1.f), glm::vec3(0.05f));
+            glm::mat4 M = T * S;
+            glUniformMatrix4fv(glGetUniformLocation(m_phongProgram, "u_model"), 1, GL_FALSE, &M[0][0]);
+
+            SceneMaterial mat{};
+            mat.cDiffuse = glm::vec4(1.f, 1.f, 1.f, 1.f); // white
+            mat.cDiffuse = glm::vec4(1.f, 1.f, 1.f, 1.f) * 2.f; // boost brightness
+            mat.cAmbient = glm::vec4(1.f, 1.f, 1.f, 1.f) * 2.f; // also white ambient
+            mat.cSpecular = glm::vec4(1.f, 1.f, 1.f, 1.f); // optional
+            mat.shininess = 16.f; // optional
+
+
+            uploadMaterial(m_phongProgram, mat);
+            glBindVertexArray(m_cubeMesh.vao); // single cube mesh for snow
+            glDrawArrays(GL_TRIANGLES, 0, m_cubeMesh.vertexCount);
+        }
+    }
+
 
     glBindVertexArray(0);
 }
@@ -379,6 +505,10 @@ void Realtime::resizeGL(int w, int h) {
 
 void Realtime::sceneChanged() {
     RenderData newData;
+    if (settings.extraCredit1) {
+        update();
+
+    }
 
     if (settings.extraCredit2) {
         // Procedural venation tree mode
@@ -400,6 +530,8 @@ void Realtime::sceneChanged() {
             up = glm::vec3(0.f, 1.f, 0.f);
         }
         m_camUp = glm::normalize(up);
+        rebuildSceneMeshes();
+        update();
 
     }
     if (settings.extraCredit4) {
@@ -445,6 +577,7 @@ void Realtime::sceneChanged() {
 
         m_renderData = buildProceduralTreeRenderDataIncremental(*m_venationSim, 0);
         rebuildSceneMeshes();
+        update();
 
     }
 
@@ -476,11 +609,39 @@ void Realtime::sceneChanged() {
     }
 }
 
+void Realtime::initSnow(int numParticles) {
+    m_snowParticles.clear();
+    for (int i = 0; i < numParticles; ++i) {
+        SnowParticle p;
+        p.pos = glm::vec3(
+            (rand() / (float)RAND_MAX - 0.5f) * 10.f, // x
+            (rand() / (float)RAND_MAX) * 10.f + 5.f,   // y
+            (rand() / (float)RAND_MAX - 0.5f) * 10.f  // z
+            );
+        p.velocity = glm::vec3(0.f, -0.02f - (rand() / (float)RAND_MAX)*0.02f, 0.f);
+        m_snowParticles.push_back(p);
+    }
+}
+
+void Realtime::updateSnow() {
+    if (!settings.extraCredit1) return;
+
+    for (auto &p : m_snowParticles) {
+        p.pos += p.velocity;
+        if (p.pos.y < 0.f) {
+            // Respawn at top
+            p.pos.y = 10.f + (rand() / (float)RAND_MAX) * 5.f;
+            p.pos.x = (rand() / (float)RAND_MAX - 0.5f) * 10.f;
+            p.pos.z = (rand() / (float)RAND_MAX - 0.5f) * 10.f;
+        }
+    }
+}
+
+
 void Realtime::growTreeStep() {
     if (!m_venationSimInitialized) return;
 
     if (m_currentEdgeIndex >= (int)m_venationSim->edges().size()) {
-        // Stop timer when tree is fully grown
         return;
     }
 
@@ -492,6 +653,9 @@ void Realtime::growTreeStep() {
     //     *m_venationSim, m_currentEdgeIndex);
     m_renderData.shapes = buildProceduralTreeRenderDataIncremental(
                               *m_venationSim, m_currentEdgeIndex).shapes;
+    if(settings.extraCredit1){
+        updateSnow();
+    }
 
 
     rebuildSceneMeshes();
@@ -500,36 +664,14 @@ void Realtime::growTreeStep() {
 
 
 void Realtime::settingsChanged() {
-    // bool modeChanged  = (settings.extraCredit3 != m_lastExtraCredit3);
-    // bool fileChanged  = (!settings.extraCredit3 && settings.sceneFilePath != m_lastSceneFilePath);
 
-    // m_lastExtraCredit3  = settings.extraCredit3;
-    // m_lastSceneFilePath = settings.sceneFilePath;
-
-    // if (modeChanged || fileChanged) {
-    //     // Either switched between file/procedural, or chose a new scene file:
-    //     // need to rebuild RenderData and meshes.
-    //     sceneChanged();
-    // }
-    // else if(settings.extraCredit2){
-    //     sceneChanged();
-    // }
-    // else {
-    //     // Geometry source is the same; only parameters that affect tessellation /
-    //     // shading / near/far planes changed. Just rebuild VAOs/VBOs and redraw.
-    //     sceneChanged();
-    //     rebuildSceneMeshes();
-    //     update();
-    // }
+    if (settings.extraCredit1 && m_snowParticles.empty()) {
+        initSnow(200);
+    }
 
     sceneChanged();
     rebuildSceneMeshes();
     update();
-    // sceneChanged();
-    // // also from old project
-    // rebuildSceneMeshes();
-    // // from old project
-    // update(); // asks for a PaintGL() call to occur
 }
 
 // ================== Camera Movement!

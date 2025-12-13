@@ -41,6 +41,10 @@ add_executable(${PROJECT_NAME}
     src/utils/sceneparser.h
     src/utils/shaderloader.h
     src/utils/aspectratiowidget/aspectratiowidget.hpp
+
+
+
+
 )
 
 # GLM: this creates its library and allows you to `#include "glm/..."`
@@ -87,6 +91,8 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
     FILES
         resources/shaders/default.frag
         resources/shaders/default.vert
+        resources/shaders/gradient.frag
+        resources/shaders/gradient.vert
         resources/bump.png
 )
 
