@@ -143,13 +143,6 @@ void main() {
     }
 
     fragColor = vec4(color, 1.0);
-    // color = 0.5 * (N + vec3(1.0)); // remap [-1,1] -> [0,1]
-    // fragColor = vec4(color, 1.0);
-
-    // float H = texture(u_bumpMap, v_uv).r;
-    // fragColor = vec4(H, H, H, 1.0);
-    // vec3 outN = 0.5*(N + vec3(1.0));
-    // fragColor = vec4(outN,1.0);
 
 
 }

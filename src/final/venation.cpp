@@ -428,8 +428,7 @@ RenderData buildProceduralTreeRenderData(bool bezier) {
 
     // 2) Cylinder vs BezierRing for the actual tube primitive:
 
-    //constexpr bool kUseBezierRingBranches = false;
-    bool kUseBezierRingBranches = bezier;
+    constexpr bool kUseBezierRingBranches = false;
 
     // Basic woody material
     SceneMaterial mat{};
