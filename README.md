@@ -25,3 +25,12 @@ using tubes spanning maximal degree-2 paths over the tree's underlying graph (hi
 
 the tree if we put auxins in a cube region some distance above the initial tree nodes: <img width="1832" height="1372" alt="auxin-in-cube-above-the-starter-nodes" src="https://github.com/user-attachments/assets/af425a29-e31d-47c3-9e43-e07bbbb6a158" />
 
+## Veronika edit (selected feature: Bump Mapping)
+I used the open source bump map of an oak tree to give our tree a nice texture. The Cylinder class was changed to calculate and store UVs, tangent, and bitangent, that are being later sent to shaders files. Shaders use bump maps and calculated tangent/bitangent to calculate new normal for each pixel using height map derivative method. This new normal is later calculated during Phong lighting model implementation.
+
+The bump mapping appeared to give a really discreet change, that it was barely visible. I had to up the scale to make it more distinct, however from far away cylinders that create the tree are quite small, so it's hard to notice the texture.
+
+additional features:
+- I added a visualization option, which starts a timer and grows a tree step by step, so that is can be nicely visualized for the video
+- played with background (gradient on a video), and a snowfall feature to add aesthetical quality to the video
+
