@@ -34,3 +34,5 @@ additional features:
 - I added a visualization option, which starts a timer and grows a tree step by step, so that is can be nicely visualized for the video
 - played with background (gradient on a video), and a snowfall feature to add aesthetical quality to the video
 
+
+
